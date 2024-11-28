@@ -20,7 +20,7 @@ print(f'matplotlib version: {mpl.__version__}')
 plt.style.use('ggplot')
 
 plt.rc('font', family='Malgun Gothic')
-plt.rc('font', family='AppleGothic')
+# plt.rc('font', family='AppleGothic')
 plt.rc('axes', unicode_minus=False)
 
 
@@ -31,7 +31,9 @@ bas_ym = [
     '202001', '202002', '202003', '202004', '202005', '202006',
     '202007', '202008', '202009', '202010', '202011', '202012',
     '202101', '202102', '202103', '202104', '202105', '202106',
-    # '202107', '202108', '202109', '202110', '202111', '202112', 
+    '202107', '202108', '202109', '202110', '202111', '202112', 
+    '202201', '202202', '202203', '202204', '202205', '202206',
+    '202207', '202208', '202209', '202210', '202211', '202212',
     '202301', '202302', '202303', '202304', '202305', '202306', 
     '202307', '202308', '202309', '202310', '202311', '202312', 
     '202401', '202402', '202403', '202404', '202405', '202406', 
@@ -42,14 +44,20 @@ df = pd.DataFrame()
 for i, var in enumerate(bas_ym):
     data_path = f'data/[NH농협카드] 일자별 소비현황_서울_{var}.csv'
     
-    # UnicodeDecodeError: 'utf-8' codec can't decode byte 0xbd in position 0: invalid start byte
-    # UnicodeDecodeError: 'euc_kr' codec can't decode byte 0xec in position 0: illegal multibyte sequence
-    try:
-        tmp_df = pd.read_csv(data_path, encoding='utf-8-sig')
-    except:
-        tmp_df = pd.read_csv(data_path, encoding='euc-kr')
+    encodings = ['utf-8-sig', 'euc-kr', 'cp949']
+    for encoding in encodings:
+        try:
+            tmp_df = pd.read_csv(data_path, encoding=encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+    else:
+        raise ValueError(f"Failed to read {data_path} with available encodings.")
     
-    df = pd.concat([df, tmp_df])
+    # Ensure no duplicate columns
+    tmp_df = tmp_df.loc[:, ~tmp_df.columns.duplicated()]
+    
+    df = pd.concat([df, tmp_df], axis=0)
     
 print(df.shape)
 print(df.head())
@@ -79,7 +87,8 @@ df['dayname'] = pd.Categorical(df['date'].dt.day_name(),
                                categories=['Monday', 'Tuesday', 'Wednesday','Thursday', 'Friday', 'Saturday', 'Sunday'],
                                ordered=True)
 
-# ※ ★★★ 공휴일 캘린더 추가 (Maybe Side Project?) ★★★
+# Add weekend variable
+df['weekend'] = df['dayname'].isin(['Saturday', 'Sunday'])
 
 # Nullity Check
 print(df.isna().sum())
@@ -90,6 +99,8 @@ df_test = df[df['year'] == 2024]
 
 print(df_train.shape, df_test.shape)
 
+# Reset Index
+df.reset_index(drop=True, inplace=True)
 
 # %% 3. EDA WITH VISUALIZATION
 fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(12,6))
@@ -103,9 +114,7 @@ axes[0].set_yticklabels([])
 corr_mat = df.drop(['시도', '승인일자', 'dayname'], axis=1).corr()
 
 sns.heatmap(corr_mat, annot=True, fmt='.1f', ax=axes[1])
-# sns.heatmap((abs(corr_mat) > 0.3), ax=axes[2])
 axes[1].set_yticklabels([])
-# axes[2].set_yticklabels([])
 
 axes[1].set_title('변수 간 상관관계')
 plt.tight_layout()
@@ -128,13 +137,6 @@ for i, vars in enumerate(variables):
 fig.suptitle('')
 plt.show()
 
-# # ※ Additional Analysis Needed
-# sns.lineplot(data=df,
-#              x='date', y='이용건수_법인')
-# sns.scatterplot(data=df[df['이용금액_법인'] > 60000],
-#                 x='date', y='이용건수_법인', c='b')
-# plt.show()
-
 # 3-4. Sales by Day
 fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(12,4))
 
@@ -145,11 +147,28 @@ sns.barplot(data=df, x='dayname', y='이용금액_전체',
 plt.tight_layout()
 plt.show()
 
+# 3-5. Sales by Month
+fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(12,4))
+
+sns.lineplot(data=df, x='month', y='이용건수_전체',
+            palette='crest', ax=axes[0])
+sns.lineplot(data=df, x='month', y='이용금액_전체',
+            palette='crest', ax=axes[1])
+
+axes[0].set_title('이용건수_전체')
+axes[1].set_title('이용금액_전체')
+axes[0].set_xticks(range(1,13))
+axes[1].set_xticks(range(1,13))
+
+plt.tight_layout()
+plt.show()
+
 
 # %% 4. Regression Model Specification
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor
-# from xgboost import 
+from xgboost import XGBRegressor
+from lightgbm import LGBMRegressor
 
 # 4-1. Train-Validation Split
 ind_vars = ['승인일자', 'year', 'month', 'day', 'dayofweek']
@@ -165,13 +184,40 @@ X_train, X_valid, y_train, y_valid = train_test_split(X, y,
 print(X_train.shape, y_train.shape)
 print(X_valid.shape, y_valid.shape)
 
-# 4-2. Machine Learning (RandomForest, XGBoost)
-model_rf = RandomForestRegressor(n_estimators=1000,
-                                 max_depth=20,
-                                 random_state=42)
-model_rf.fit(X_train, y_train)
+# 4-2. Machine Learning (RandomForest, XGBoost, LightGBM)
+dep_var = '이용금액_개인'
 
-# 4-3. Time Series Analysis (ARIMA)
+model_rf = RandomForestRegressor(n_estimators=1000,
+                                max_depth=20,
+                                random_state=42)
+model_rf.fit(X_train, y_train[dep_var])
+
+model_xgb = XGBRegressor(random_state=42)
+model_xgb.fit(X_train, y_train[dep_var]) 
+
+model_lgbm = LGBMRegressor(random_state=42)
+model_lgbm.fit(X_train, y_train[dep_var])
+
+
+# 4-3. Model Comparison
+from sklearn.metrics import mean_squared_error
+
+y_sample = y_valid[dep_var]
+
+y_pred_rf = model_rf.predict(X_valid)
+mse_rf = mean_squared_error(y_pred_rf, y_sample)
+print(f'MSE (RandomForest): {mse_rf:.2f}')
+
+y_pred_xgb = model_xgb.predict(X_valid)
+mse_xgb = mean_squared_error(y_pred_xgb, y_sample)
+print(f'MSE (XGBoost): {mse_xgb:.2f}')
+
+y_pred_lgbm = model_lgbm.predict(X_valid)
+mse_lgbm = mean_squared_error(y_pred_lgbm, y_sample)
+print(f'MSE (LightGBM): {mse_lgbm:.2f}')
+
+
+# 4-4. Time Series Analysis (ARIMA)
 # from statsmodels.tsa.arima_model import ARIMA
 # model_arima = ARIMA()
 
@@ -180,7 +226,7 @@ print(f'''
       A. Tried to use ARIMA model, but it was not suitable for the dataset
       ''')
 
-# 4-4. Deep Learning Model (LSTM)
+# 4-5. Deep Learning Model (LSTM)
 # import tensorflow as tf
 
 print(f'''
@@ -191,80 +237,93 @@ print(f'''
 
 
 # %% 5. MODEL VALIDATION
-# 5-1. Model Tuning
-from sklearn.model_selection import GridSearchCV
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_squared_error
+# # 5-1. Model Tuning
+# from sklearn.model_selection import GridSearchCV
+# from sklearn.metrics import mean_squared_error
 
-# Define the parameter grid
-param_grid = {
-    'n_estimators': [100, 500, 1000, 5000],
-    'max_depth': [1, 5, 10, 50, 100, 500, 1000]
-}
+# # Define the parameter grid
+# param_grid = {
+#     'n_estimators': [100, 500, 1000, 5000],
+#     'max_depth': [1, 5, 10, 50, 100, 500, 1000]
+# }
 
-# Initialize the model
-model_rf = RandomForestRegressor(random_state=42)
+# # Initialize the model
+# model_rf = RandomForestRegressor(random_state=42)
 
-# Initialize GridSearchCV
-grid_search = GridSearchCV(estimator=model_rf, 
-                           param_grid=param_grid, cv=5, scoring='neg_mean_squared_error', 
-                           n_jobs=4)
+# # Initialize GridSearchCV
+# grid_search = GridSearchCV(estimator=model_rf, 
+#                            param_grid=param_grid, cv=5, scoring='neg_mean_squared_error', 
+#                            n_jobs=4)
 
-# Fit the model
-grid_search.fit(X_train, y_train)
+# # Fit the model
+# grid_search.fit(X_train, y_train)
 
-# Get the best parameters and best score
-best_params = grid_search.best_params_
-best_score = -grid_search.best_score_
+# # Get the best parameters and best score
+# best_params = grid_search.best_params_
+# best_score = grid_search.best_score_
 
-print(f'Best parameters: {best_params}')
-print(f'Best MSE: {best_score:.2f}')
+# print(f'Best parameters: {best_params}')
+# print(f'Best MSE: {best_score:.2f}')
 
-# Predict using the best model
-best_model = grid_search.best_estimator_
-y_pred_rf = best_model.predict(X_valid)
-mse = mean_squared_error(y_pred_rf, y_valid)
-print(f'Validation MSE: {mse:.2f}')
+# # Predict using the best model
+# best_model = grid_search.best_estimator_
+# y_pred_rf = best_model.predict(X_valid)
+# mse_rf = mean_squared_error(y_pred_rf, y_valid)
+# print(f'Validation MSE (RandomForest): {mse_rf:.2f}')
 
-# %% 5-2. Model 
-from sklearn.metrics import mean_squared_error
+# y_pred_xgb = model_xgb.predict(X_valid)
+# mse_xgb = mean_squared_error(y_pred_xgb, y_valid)
+# print(f'Validation MSE (XGBoost): {mse_xgb:.2f}')
 
+# y_pred_lgbm = model_lgbm.predict(X_valid)
+# mse_lgbm = mean_squared_error(y_pred_lgbm, y_valid)
+# print(f'Validation MSE (LightGBM): {mse_lgbm:.2f}')
+
+# %% 5-2. Model Evaluation
 test_period = df_test['date'].between('2024/06/01', '2024/06/30')
 
 x_range = np.arange(1,len(df_test[test_period])+1)
 X_test = df_test[test_period][ind_vars]
-y_test = df_test[test_period][dep_vars]
+y_test = df_test[test_period][dep_var]
 
-y_pred_rf = best_model.predict(X_test)
+y_pred_rf = model_rf.predict(X_test)
+y_pred_xgb = model_xgb.predict(X_test)
+y_pred_lgbm = model_lgbm.predict(X_test)
 
-mse = mean_squared_error(y_pred_rf, y_test)
-print(f'MSE: {mse:.2f}')
+mse_rf = mean_squared_error(y_pred_rf, y_test)
+mse_xgb = mean_squared_error(y_pred_xgb, y_test)
+mse_lgbm = mean_squared_error(y_pred_lgbm, y_test)
 
-# 5-3. Model Visualization
-fig, axes = plt.subplots(nrows=4, ncols=1, figsize=(12, 12))
+print(f'MSE (RandomForest): {mse_rf:.2f}')
+print(f'MSE (XGBoost): {mse_xgb:.2f}')
+print(f'MSE (LightGBM): {mse_lgbm:.2f}')
 
-for i in range(4):
-    # 첫 번째 라인 플롯
-    axes[i].plot(df_test[test_period]['date'], df_test[test_period][dep_vars[i]],
-                 marker='o', markersize=5, label='Actual')
-    
-    # 두 번째 라인 플롯
-    axes[i].plot(df_test[test_period]['date'], y_pred_rf[:, i],
-                 marker='o', markersize=5, label='Predicted', linestyle='--')
-    
-    # 축 제목 및 스타일 설정
-    axes[i].set_title(dep_vars[i], fontsize=14)
-    axes[i].set_xlabel('Date', fontsize=12)
-    axes[i].set_ylabel(f'{dep_vars[i]}\n(억 원)', fontsize=12)
-    axes[i].set_xticks(df_test[test_period]['date'])
-    axes[i].set_xticklabels(df_test[test_period]['date'].dt.day)
-    axes[i].legend(loc='upper left')  # 범례 추가
+# %% 5-3. Model Visualization
+plt.rc('figure', figsize=(12,6))
 
-# 레이아웃 정리
-plt.tight_layout()
+plt.plot(x_range, y_test, 
+         marker='o', markersize=5, label='Actual', color='black')
+plt.plot(x_range, y_pred_rf, 
+         marker='o', markersize=5, label=f'RandomForest MSE: {mean_squared_error(y_pred_rf, y_test):.2f}', 
+         linestyle='--', color='red')
+plt.plot(x_range, y_pred_xgb,
+            marker='o', markersize=5, label=f'XGBoost MSE: {mean_squared_error(y_pred_xgb, y_test):.2f}', 
+            linestyle='--', color='blue')
+plt.plot(x_range, y_pred_lgbm,
+            marker='o', markersize=5, label=f'LightGBM MSE: {mean_squared_error(y_pred_lgbm, y_test):.2f}', 
+            linestyle='--', color='green')
+
+plt.title('Personal Sales Prediction')
+plt.xlabel('Date')
+plt.ylabel('Personal Sales (억 원)')
+plt.xticks(x_range, df_test[test_period]['date'].dt.day)
+plt.legend()
 plt.show()
 
-# 5-4. Model Interpretation
+
+# %% 5-4. Model Interpretation
+best_model = model_lgbm
+
 # Feature Importance
 feature_importance = best_model.feature_importances_
 feature_names = X_train.columns
@@ -276,5 +335,3 @@ plt.figure(figsize=(12,6))
 sns.barplot(data=df_fi, x='importance', y='feature')
 plt.title('Feature Importance')
 plt.show()
-
-# %%
