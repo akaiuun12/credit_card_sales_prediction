@@ -325,3 +325,4 @@ plt.figure(figsize=(12,6))
 sns.barplot(data=df_fi, x='importance', y='feature')
 plt.title('Feature Importance')
 plt.show()
+# %%
