@@ -278,7 +278,7 @@ model_lgbm.fit(X_train, y_train[dep_var])
 
 ### 4.3. 모델 성능 평가
 
-- **MSE (Mean Squared Error)**를 사용하여 각 모델의 성능을 비교하였다.  
+- **MSE (Mean Squared Error)** 기반으로 각 모델의 성능을 비교하였다.  
 - RandomForest는 (n_estimators=1000, max_depth=20)로, XGBoost와 LightGBM은 디폴트 설정으로 모델을 학습시켰다.
 - 결과적으로 LightGBM이 가장 높은 정확도를, RF 모형이 가장 낮은 정확도를 보였다.
 
@@ -316,7 +316,7 @@ best_model = model_lgbm
 
 ### 5.1. 타겟 기간 예측 (2024년 6월)
 
-2024년 6월 매출 데이터를 타겟으로 설정하고, 2024년 이전의 데이터를 학습에 사용하여 **RandomForest**, **XGBoost**, **LightGBM** 모델로 예측을 진행하였다. 각 모델의 성능은 **MSE (Mean Squared Error)**, **MAE (Mean Absolute Error)**, **MAPE (Mean Absolute Percentage Error)**를 기준으로 평가하였으며, 결과는 다음과 같다.
+2024년 6월 매출 데이터를 타겟으로 설정하고, 2024년 이전의 데이터를 학습에 사용하여 **RandomForest**, **XGBoost**, **LightGBM** 모델로 예측을 진행하였다. 각 모델의 성능은 **MSE (Mean Squared Error)**, **MAE (Mean Absolute Error)**, **MAPE (Mean Absolute Percentage Error)** 기준으로 평가하였으며, 결과는 다음과 같다.
 
 | 모델           | MSE          | MAE          | MAPE      |
 |----------------|--------------|--------------|-----------|
@@ -438,8 +438,7 @@ plt.show()
 - **연도(year)**: 가장 낮은 중요도를 보여, 연도별 차이는 상대적으로 적은 영향을 미쳤다.
 
 
-특성 중요도 분석 결과 **요일(dayofweek)**의 높은 중요도는 마케팅 전략 수립 시 요일별 소비 트렌드를 적극 반영해야 함을 시사한다. 이를 활용해 특정 요일의 매출 증대를 목표로 한 맞춤형 프로모션이나 캠페인을 기획할 수 있다.
-
+특성 중요도 분석 결과, **요일(dayofweek)** 변수의 높은 중요도는 마케팅 전략 수립 시 요일별 소비 트렌드를 적극 반영해야 함을 시사한다. 이를 활용해 특정 요일의 매출 증대를 목표로 한 맞춤형 프로모션이나 캠페인을 기획할 수 있다.
 ```python
 # %% 5-3. Model Interpretation
 best_model = model_xgb
