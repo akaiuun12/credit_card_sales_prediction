@@ -1,7 +1,6 @@
 # %% Project 2. NH Card Sales Prediction
 # This is a replication project of credit card sales prediction. 
 # How to make better
-#  - At least 3 different models (RandomForest, XGBoost, LightGBM)
 #  - Add more about Key Questions
 #  - What I focused on this project
 
@@ -12,21 +11,15 @@ import seaborn as sns
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
-print(f'numpy version: {np.__version__}')
-print(f'pandas version: {pd.__version__}')
-print(f'seaborn version: {sns.__version__}')
-print(f'matplotlib version: {mpl.__version__}')
-
 plt.style.use('ggplot')
 
-plt.rc('font', family='Malgun Gothic')
-# plt.rc('font', family='AppleGothic')
+# plt.rc('font', family='Malgun Gothic')    # Windows OS
+plt.rc('font', family='AppleGothic')    # MacOS
 plt.rc('axes', unicode_minus=False)
 
 
 # %% 1. LOAD THE DATA
 # Data Source: KDX Data - [NH농협카드] 일자별 소비현황_서울
-
 bas_ym = pd.date_range(start='20200101', end='20240630', freq='MS').strftime('%Y%m').tolist()
 
 df = pd.DataFrame()
@@ -35,7 +28,9 @@ for i, var in enumerate(bas_ym):
     data_path = f'data/[NH농협카드] 일자별 소비현황_서울_{var}.csv'
     
     encodings = ['utf-8-sig', 'euc-kr', 'cp949']
-    for encoding in encodings:
+    
+    # Data encoding inconsistency handling
+    for encoding in encodings:  
         try:
             tmp_df = pd.read_csv(data_path, encoding=encoding)
             break
@@ -43,9 +38,6 @@ for i, var in enumerate(bas_ym):
             continue
     else:
         raise ValueError(f"Failed to read {data_path} with available encodings.")
-    
-    # Ensure no duplicate columns
-    tmp_df = tmp_df.loc[:, ~tmp_df.columns.duplicated()]
     
     df = pd.concat([df, tmp_df], axis=0)
     
@@ -58,9 +50,9 @@ print(df.head())
 df['date'] = pd.to_datetime(df['승인일자'], format='%Y%m%d')
 
 # Decimal Point Handling
-df['이용금액_전체'] = df['이용금액_전체'] / 100
-df['이용금액_개인'] = df['이용금액_개인'] / 100
-df['이용금액_법인'] = df['이용금액_법인'] / 100
+df['이용금액_전체_억원'] = df['이용금액_전체'] / 100
+df['이용금액_개인_억원'] = df['이용금액_개인'] / 100
+df['이용금액_법인_억원'] = df['이용금액_법인'] / 100
 
 # Derived Variables
 df['year'] = df['date'].dt.year
@@ -68,14 +60,11 @@ df['month'] = df['date'].dt.month
 df['day'] = df['date'].dt.day
 df['dayofweek'] = df['date'].dt.dayofweek
 
-df['avg_sales'] = df['이용금액_전체'] * 1000000 / df['이용건수_전체'] / 1000
-df['avg_sales_psn'] = df['이용금액_개인'] * 1000000 / df['이용건수_개인'] / 1000
-df['avg_sales_cor'] = df['이용금액_법인'] * 1000000 / df['이용건수_법인'] / 1000
-
 # Nominal to Ordinal Variable
 df['dayname'] = pd.Categorical(df['date'].dt.day_name(), 
                                categories=['Monday', 'Tuesday', 'Wednesday','Thursday', 'Friday', 'Saturday', 'Sunday'],
                                ordered=True)
+
 
 # Add weekend variable
 df['weekend'] = df['dayname'].isin(['Saturday', 'Sunday'])
@@ -161,8 +150,8 @@ from xgboost import XGBRegressor
 from lightgbm import LGBMRegressor
 
 # 4-1. Train-Validation Split
-ind_vars = ['승인일자', 'year', 'month', 'day', 'dayofweek']
-dep_vars = ['이용건수_개인', '이용건수_법인', '이용금액_개인', '이용금액_법인']
+ind_vars = ['승인일자', 'year', 'month', 'day', 'dayofweek', 'weekend']
+dep_vars = ['이용건수_개인', '이용건수_법인', '이용금액_개인_억원', '이용금액_법인_억원']
 
 X = df[df['year'] != 2024][ind_vars]
 y = df[df['year'] != 2024][dep_vars]
@@ -174,20 +163,18 @@ X_train, X_valid, y_train, y_valid = train_test_split(X, y,
 print(X_train.shape, y_train.shape)
 print(X_valid.shape, y_valid.shape)
 
-# 4-2. Machine Learning (RandomForest, XGBoost, LightGBM)
-dep_var = '이용금액_개인'
+# 4-2. Model Training
+dep_var = dep_vars[2]   # 이용금액_개인
 
 model_rf = RandomForestRegressor(n_estimators=1000,
-                                max_depth=20,
-                                random_state=42)
-model_rf.fit(X_train, y_train[dep_var])
-
+                                 max_depth=20,
+                                 random_state=42)
 model_xgb = XGBRegressor(random_state=42)
-model_xgb.fit(X_train, y_train[dep_var]) 
-
 model_lgbm = LGBMRegressor(random_state=42)
-model_lgbm.fit(X_train, y_train[dep_var])
 
+model_rf.fit(X_train, y_train[dep_var])
+model_xgb.fit(X_train, y_train[dep_var]) 
+model_lgbm.fit(X_train, y_train[dep_var])
 
 # 4-3. Model Comparison
 from sklearn.metrics import mean_squared_error
@@ -195,35 +182,16 @@ from sklearn.metrics import mean_squared_error
 y_sample = y_valid[dep_var]
 
 y_pred_rf = model_rf.predict(X_valid)
-mse_rf = mean_squared_error(y_pred_rf, y_sample)
-print(f'MSE (RandomForest): {mse_rf:.2f}')
-
 y_pred_xgb = model_xgb.predict(X_valid)
-mse_xgb = mean_squared_error(y_pred_xgb, y_sample)
-print(f'MSE (XGBoost): {mse_xgb:.2f}')
-
 y_pred_lgbm = model_lgbm.predict(X_valid)
+
+mse_rf = mean_squared_error(y_pred_rf, y_sample)
+mse_xgb = mean_squared_error(y_pred_xgb, y_sample)
 mse_lgbm = mean_squared_error(y_pred_lgbm, y_sample)
+
+print(f'MSE (RandomForest): {mse_rf:.2f}')
+print(f'MSE (XGBoost): {mse_xgb:.2f}')
 print(f'MSE (LightGBM): {mse_lgbm:.2f}')
-
-
-# 4-4. Time Series Analysis (ARIMA)
-# from statsmodels.tsa.arima_model import ARIMA
-# model_arima = ARIMA()
-
-print(f'''
-      Q. Why not use ARIMA?
-      A. Tried to use ARIMA model, but it was not suitable for the dataset
-      ''')
-
-# 4-5. Deep Learning Model (LSTM)
-# import tensorflow as tf
-
-print(f'''
-      Q. Why not use LSTM or RNN?
-      A. Couldn't use deep learning models due to the limited CPU, Memory, 
-         and GPU resources in cloud environment.
-      ''')
 
 
 # %% 5. MODEL VALIDATION
@@ -269,7 +237,7 @@ print(f'''
 # mse_lgbm = mean_squared_error(y_pred_lgbm, y_valid)
 # print(f'Validation MSE (LightGBM): {mse_lgbm:.2f}')
 
-# %% 5-2. Model Evaluation
+# 5-2. Model Evaluation
 test_period = df_test['date'].between('2024/06/01', '2024/06/30')
 
 x_range = np.arange(1,len(df_test[test_period])+1)
@@ -288,7 +256,7 @@ print(f'MSE (RandomForest): {mse_rf:.2f}')
 print(f'MSE (XGBoost): {mse_xgb:.2f}')
 print(f'MSE (LightGBM): {mse_lgbm:.2f}')
 
-# %% 5-3. Model Visualization
+# 5-3. Model Visualization
 plt.rc('figure', figsize=(12,6))
 
 plt.plot(x_range, y_test, 
@@ -310,18 +278,18 @@ plt.xticks(x_range, df_test[test_period]['date'].dt.day)
 plt.legend()
 plt.show()
 
-
-# %% 5-4. Model Interpretation
+# 5-4. Model Interpretation
 best_model = model_lgbm
 
 # Feature Importance
-feature_importance = best_model.feature_importances_
-feature_names = X_train.columns
+df_fi = pd.DataFrame({
+    'feature': X_train.columns, 
+    'importance': best_model.feature_importances_
+    })
 
-df_fi = pd.DataFrame({'feature': feature_names, 'importance': feature_importance})
-
-plt.figure(figsize=(12,6))
-
-sns.barplot(data=df_fi, x='importance', y='feature')
+plt.rc('figure', figsize=(6,3))
+sns.barplot(data=df_fi, x='importance', y='feature',
+            palette='crest')
 plt.title('Feature Importance')
 plt.show()
+# %%
