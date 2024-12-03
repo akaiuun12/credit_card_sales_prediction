@@ -4,36 +4,38 @@
 
 ## Summary
 - **앙상블 모형은 일별 매출을 비교적 정확하게 예측한다.**  
-  (월 매출 오차 약 460억, 전체 매출 대비 1.8%, 2024.06 예측 기준)
+  (월 매출 오차 약 460억, 전체 매출액 대비 1.8%, 2024.06 예측 기준)
 - **LightGBM** 모델이 가장 우수한 성능을 보였고  
   **XGBoost**와 **RandomForest** 모델도 비교적 높은 예측 정확도를 기록했다.
 - 매출 예측에 **연도**, **월**, **요일** 등이 중요한 영향을 미친다.
 
 
-## 1. 프로젝트 개요
+## 0. 프로젝트 개요
 
-이 프로젝트는 신용카드 일별 매출 데이터를 기반으로 미래 매출을 예측하고자 한다. 미래 매출 예측은 마케팅 캠페인 기획, 재무 계획 설립 등 다양한 사업 영역에서 활용한다. 
+- **문제 인식**: 신용카드 월별 매출목표만 존재하고, 구체적인 일별 매출 예측이 부족한 상황
+- **가설 설정**: 일별 매출 예측을 통해 마케팅 캠페인 기획, 재무 계획 등에 활용 가능
+- **목표**: 머신러닝을 사용하여 보다 정확한 신용카드 일별 매출을 예측하고자 함
+
+미래 매출 예측은 마케팅 캠페인 기획, 재무 계획 설립 등 다양한 사업 영역에서 활용한다. 이 프로젝트는 신용카드 일별 매출 데이터를 기반으로 미래 매출을 예측하고자 한다. 
 
 실제 업무 환경에서도 체계적인 매출 예측방법론이 존재하지 않고 담당자의 경험과 재량에 의존하는 경우도 많다. 체계적인 예측방법론 정립을 위해 **RandomForest**, **XGBoost**, **LightGBM** 3가지 머신러닝 모델을 사용하여 예측 성능을 비교하였다.
 
 
-## 2. 데이터 로딩
+## 1. 데이터 로딩
 
-### 데이터 출처
-데이터는 **KDX 한국데이터거래소**에서 제공하는 **NH농협카드 일자별 소비현황_서울** 데이터셋을 사용한다. 데이터는 월별로 제공되며, 각 파일은 'YYYYMM' 형식으로 저장된다. 데이터 오너십을 가지고 있지 않아 리포지토리에는 제외하지만 아래 공개 데이터 링크에서 직접 다운받을 수 있다.
+### 실제 환경에서의 데이터 로딩
+실제 업무환경에서는 DW에서 데이터를 직접 추출하여 사용하였다. RDBMS 환경에서는 Oracle SQL을, Hadoop 환경에서는 Impala SQL을 사용하여 데이터를 추출한다. 보안과 규제로 인해 실제 데이터를 사용할 수 없으므로, 공개 데이터를 활용하여 Replication을 진행한다.
 
-- **데이터명**: [NH농협카드] 일자별 소비현황_서울
-- **URL**: [KDX 데이터 상세](https://kdx.kr/data/product-list?specs_id=MA38230007&corp_id=CORP000024&category_id=CA000004)
+### Replication 데이터 출처
+데이터는 **KDX 한국데이터거래소**에서 제공하는 **NH농협카드 일자별 소비현황_서울** 데이터셋을 사용한다. 데이터는 csv 파일 형태로 월별로 제공되며, 각 파일명은 '_YYYYMM' 형식으로 끝난다. 데이터 오너십을 가지고 있지 않아 리포지토리에는 제외하지만 아래 공개 데이터 링크에서 직접 다운받을 수 있다.
 
-### 데이터 확인
-- 훈련 데이터: 2020.01 ~ 2023.12
-- 검증 데이터: 2024.01 ~ 2024.06
+- **데이터**: [NH농협카드 일자별 소비현황](https://kdx.kr/data/product-list?specs_id=MA38230007&corp_id=CORP000024&category_id=CA000004)
+- 훈련 데이터: 2020.01 ~ 2023.12 서울 지역 일자별 소비현황
+- 검증 데이터: 2024.06 서울 지역 일자별 소비현황
 - 주요 컬럼은 카드 사용 금액과 건수, 승인 일자 등의 정보를 포함한다.
 
 ```python
-# %% 1. LOAD THE DATA
-# Data Source: KDX Data - [NH농협카드] 일자별 소비현황_서울
-
+# %% 1. DATA LOADING
 bas_ym = pd.date_range(start='20200101', end='20240630', freq='MS').strftime('%Y%m').tolist()
 
 df = pd.DataFrame()
@@ -42,7 +44,9 @@ for i, var in enumerate(bas_ym):
     data_path = f'data/[NH농협카드] 일자별 소비현황_서울_{var}.csv'
     
     encodings = ['utf-8-sig', 'euc-kr', 'cp949']
-    for encoding in encodings:
+    
+    # Data encoding inconsistency handling
+    for encoding in encodings:  
         try:
             tmp_df = pd.read_csv(data_path, encoding=encoding)
             break
@@ -51,25 +55,29 @@ for i, var in enumerate(bas_ym):
     else:
         raise ValueError(f"Failed to read {data_path} with available encodings.")
     
-    # Ensure no duplicate columns
-    tmp_df = tmp_df.loc[:, ~tmp_df.columns.duplicated()]
-    
     df = pd.concat([df, tmp_df], axis=0)
     
 print(df.shape)
 print(df.head())
 ```
 
-## 3. 데이터 전처리
 
-### 3.1. 데이터 타입 변환
-- 승인일자를 `datetime64` 타입으로 변환하고 금액 변수들의 단위를 분석에 용이하게 변경한다.
+## 2. 데이터 전처리
 
-### 3.2. 파생 변수 생성
-- 연도(`year`), 월(`month`), 일(`day`), 요일(`dayofweek`), 주말 여부(`weekend`) 등의 파생 변수를 생성하여 모델에 활용할 수 있도록 한다.
-- 금액의 평균을 나타내는 변수들도 분석 참고용으로 생성한다 (`avg_sales`, `avg_sales_psn`, `avg_sales_cor`).
+### 2.1. 데이터 타입 변환
+승인일자를 `datetime64` 타입으로 변환하고 금액 변수들의 단위를 분석에 용이하게 변경한다. (백만원 -> 억원)
+
+### 2.2. 파생 변수 생성
+연도(`year`), 월(`month`), 일(`day`), 요일(`dayofweek`), 주말 여부(`weekend`) 등의 파생 변수를 생성하여 모델에 활용할 수 있도록 한다. 금액의 평균을 나타내는 변수들도 분석 참고용으로 생성한다 (`avg_sales`, `avg_sales_psn`, `avg_sales_cor`).
+
+### 2.3. 범주형 변수 변환
+요일(`dayname`) 변수를 순서형 변수로 변환하여 모델에 활용한다. 요일은 명목형 범주에 해당하지만, 시각화 등을 위해서 순서형으로 변환하는 것이 편리하다.
+
+### 2.4. 데이터 분할
+2020~2023 데이터를 훈련데이터로 사용하여 2024년 6월 매출 예측을 수행할 것이다. 과거 데이터를 사용하여 6개월 뒤의 매출을 예측함으로써 모델의 일반화 성능을 확인한다.
 
 ```python
+# 2. DATA PREPROCESSING
 # Type Conversion (int64 -> datetime64)
 df['date'] = pd.to_datetime(df['승인일자'], format='%Y%m%d')
 
@@ -107,10 +115,10 @@ print(df_train.shape, df_test.shape)
 df.reset_index(drop=True, inplace=True)
 ```
 
+
 ## 4. 데이터 탐색적 분석 (EDA)
 
 ### 4.1. 결측치 확인
-
 ![picture 0](images/49a21fa26365104b0e4fc04bb6c524810d922c40fcf9009ca24359372ee791f6.png)  
 
 - 데이터에서 결측치를 시각적으로 확인하고, 결측치를 적절히 처리한다.
@@ -170,6 +178,34 @@ for i, vars in enumerate(variables):
     plt.tight_layout()
 
 fig.suptitle('')
+plt.show()
+```
+
+```python
+# 3-4. Sales by Day
+fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(12,4))
+
+sns.barplot(data=df, x='dayname', y='이용건수_전체', 
+            palette='crest', ax=axes[0])
+sns.barplot(data=df, x='dayname', y='이용금액_전체', 
+            palette='crest', ax=axes[1])
+plt.tight_layout()
+plt.show()
+
+# 3-5. Sales by Month
+fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(12,4))
+
+sns.lineplot(data=df, x='month', y='이용건수_전체',
+            palette='crest', ax=axes[0])
+sns.lineplot(data=df, x='month', y='이용금액_전체',
+            palette='crest', ax=axes[1])
+
+axes[0].set_title('이용건수_전체')
+axes[1].set_title('이용금액_전체')
+axes[0].set_xticks(range(1,13))
+axes[1].set_xticks(range(1,13))
+
+plt.tight_layout()
 plt.show()
 ```
 
@@ -285,19 +321,24 @@ plt.show()
 ## 6. 모델 해석
 
 ### 6.1. 특성 중요도 분석
+![picture 0](images/2664f1faba3b27b0fae365e871d45245247ffaf20d0c5b76d442e5b41a4df50b.png)  
 
 - **LightGBM** 모델을 사용하여 각 특성의 중요도를 분석하고, 주어진 특성들 중 중요한 영향을 미친 변수들을 시각적으로 확인한다.
 
 ```python
-# %% 5-1. Feature Importance
-importances = model_lgbm.feature_importances_
-feature_names = X_train.columns
+# 5-4. Model Interpretation
+best_model = model_lgbm
 
-# Feature Importance Visualization
-fig, ax = plt.subplots(figsize=(10,6))
-sns.barplot(x=importances, y=feature_names, ax=ax)
-ax.set_title('Feature Importance - LightGBM')
-plt.tight_layout()
+# Feature Importance
+df_fi = pd.DataFrame({
+    'feature': X_train.columns, 
+    'importance': best_model.feature_importances_
+    })
+
+plt.rc('figure', figsize=(6,3))
+sns.barplot(data=df_fi, x='importance', y='feature',
+            palette='crest')
+plt.title('Feature Importance')
 plt.show()
 ```
 
