@@ -439,6 +439,7 @@ plt.show()
 
 
 특성 중요도 분석 결과, **요일(dayofweek)** 변수의 높은 중요도는 마케팅 전략 수립 시 요일별 소비 트렌드를 적극 반영해야 함을 시사한다. 이를 활용해 특정 요일의 매출 증대를 목표로 한 맞춤형 프로모션이나 캠페인을 기획할 수 있다.
+
 ```python
 # %% 5-3. Model Interpretation
 best_model = model_xgb
